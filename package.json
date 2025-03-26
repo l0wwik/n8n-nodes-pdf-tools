@@ -1,6 +1,6 @@
 {
   "name": "@l0wwik/n8n-nodes-split-pdf",
-  "version": "1.0.1",
+  "version": "1.3.0",
   "description": "A custom n8n node to extract specific pages from a PDF (Split PDF)",
   "keywords": [
     "n8n",
