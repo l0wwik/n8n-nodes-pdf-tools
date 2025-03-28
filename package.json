@@ -1,27 +1,31 @@
 {
-  "name": "@l0wwik/n8n-nodes-split-pdf",
-  "version": "1.3.0",
-  "description": "A custom n8n node to extract specific pages from a PDF (Split PDF)",
+  "name": "@l0wwik/n8n-nodes-pdf-tools",
+  "version": "1.5.0",
+  "description": "A custom n8n node to manipulate PDF files: split, merge, reorder, rotate, delete, watermark, add image, extract text, and read metadata.",
   "keywords": [
     "n8n",
     "n8n-community-node",
     "pdf",
     "split",
+    "merge",
+    "rotate",
+    "watermark",
+    "text-extraction",
     "n8n-node"
   ],
   "license": "MIT",
-  "homepage": "https://github.com/l0wwik/n8n-nodes-split-pdf",
+  "homepage": "https://github.com/l0wwik/n8n-nodes-pdf-tools",
   "author": {
     "name": "l0wwik",
     "url": "https://github.com/l0wwik"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/l0wwik/n8n-nodes-split-pdf.git"
+    "url": "https://github.com/l0wwik/n8n-nodes-pdf-tools.git"
   },
-  "main": "dist/index.js",
+  "main": "index.js",
   "scripts": {
-    "build": "tsc && gulp build:icons",
+    "build": "tsc",
     "dev": "tsc --watch",
     "format": "prettier nodes --write",
     "lint": "eslint nodes package.json",
@@ -35,13 +39,14 @@
   "n8n": {
     "n8nNodesApiVersion": 1,
     "nodes": [
-      "dist/nodes/SplitPdf/SplitPdf.node.js"
+      "dist/nodes/PdfTools/PdfTools.node.js"
     ]
   },
   "devDependencies": {
     "@types/express": "^5.0.1",
     "@types/form-data": "^2.2.1",
-    "@types/node": "^22.13.13",
+    "@types/node": "^22.13.14",
+    "@types/pdf-parse": "^1.1.4",
     "@typescript-eslint/parser": "^5.45.0",
     "eslint-plugin-n8n-nodes-base": "^1.11.0",
     "gulp": "^4.0.2",
@@ -51,6 +56,7 @@
     "typescript": "^4.8.4"
   },
   "dependencies": {
-    "pdf-lib": "^1.17.1"
+    "pdf-lib": "^1.17.1",
+    "pdf-parse": "^1.1.1"
   }
 }
