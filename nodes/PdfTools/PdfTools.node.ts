@@ -1,299 +1,319 @@
+// PdfOperations.ts
+import { PDFDocument, rgb } from 'pdf-lib';
+import pdfParse from 'pdf-parse';
+import { NodeOperationError, INode, IBinaryData, INodeExecutionData } from 'n8n-workflow';
+
+export enum Operation {
+	AddImage = 'addImage',
+	Merge = 'merge',
+	ExtractText = 'extractText',
+	Split = 'split',
+}
+
+type BinaryMatch = {
+	buffer: Buffer;
+	mimeType: string;
+	fileName?: string;
+};
+
+type BinaryMatchResult = {
+	pdf?: BinaryMatch;
+	image?: BinaryMatch;
+};
+
+export class PdfOperations {
+	static findBinaryByMimeType(items: INodeExecutionData[], mimeType: string): BinaryMatch | undefined {
+		for (const item of items) {
+			if (!item.binary) continue;
+			for (const binary of Object.values(item.binary)) {
+				if (binary.mimeType === mimeType) {
+					return {
+						buffer: Buffer.from(binary.data, 'base64'),
+						mimeType: binary.mimeType,
+						fileName: binary.fileName,
+					};
+				}
+			}
+		}
+		return undefined;
+	}
+
+	static ensureMimeType(binary: IBinaryData, expectedTypes: string[], node: INode, itemIndex: number): void {
+		if (!expectedTypes.includes(binary.mimeType)) {
+			throw new NodeOperationError(node, `Unsupported MIME type: ${binary.mimeType}. Expected: ${expectedTypes.join(', ')}`, { itemIndex });
+		}
+	}
+
+	static async addImage(
+		pdfBuffer: Buffer,
+		imageBuffer: Buffer,
+		imageMimeType: string,
+		pageIndexes: number[],
+		imageOptions: { x: number; y: number; scale: number },
+	): Promise<Buffer> {
+		const pdfDoc = await PDFDocument.load(pdfBuffer);
+		let image;
+		if (imageMimeType === 'image/png') {
+			image = await pdfDoc.embedPng(imageBuffer);
+		} else if (imageMimeType === 'image/jpeg') {
+			image = await pdfDoc.embedJpg(imageBuffer);
+		} else {
+			throw new Error(`Unsupported image format: ${imageMimeType}`);
+		}
+		const { width, height } = image.scale(imageOptions.scale);
+		for (const pageIndex of pageIndexes) {
+			const page = pdfDoc.getPage(pageIndex);
+			page.drawImage(image, { x: imageOptions.x, y: imageOptions.y, width, height });
+		}
+		return Buffer.from(await pdfDoc.save());
+	}
+
+	static async mergePDFs(pdfBuffers: Buffer[]): Promise<Buffer> {
+		const mergedPdf = await PDFDocument.create();
+		for (const buffer of pdfBuffers) {
+			const doc = await PDFDocument.load(buffer);
+			const pages = await mergedPdf.copyPages(doc, doc.getPageIndices());
+			pages.forEach((p) => mergedPdf.addPage(p));
+		}
+		return Buffer.from(await mergedPdf.save());
+	}
+
+	static async extractText(pdfBuffer: Buffer): Promise<string> {
+		const data = await pdfParse(pdfBuffer);
+		return data.text;
+	}
+
+	static async countPages(pdfBuffer: Buffer): Promise<number> {
+		const pdfDoc = await PDFDocument.load(pdfBuffer);
+		return pdfDoc.getPageCount();
+	}
+
+	static async splitPDF(pdfBuffer: Buffer, pageIndexes: number[]): Promise<Buffer> {
+		const pdfDoc = await PDFDocument.load(pdfBuffer);
+		const newPdf = await PDFDocument.create();
+		for (const index of pageIndexes) {
+			const [copiedPage] = await newPdf.copyPages(pdfDoc, [index]);
+			newPdf.addPage(copiedPage);
+		}
+		return Buffer.from(await newPdf.save());
+	}
+
+	static parsePageRange(pages: string, totalPages: number): number[] {
+		if (pages.trim().toLowerCase() === 'all') {
+			return Array.from({ length: totalPages }, (_, i) => i);
+		}
+		const indices: number[] = [];
+		for (const part of pages.split(',')) {
+			if (part.includes('-')) {
+				const [start, end] = part.split('-').map((n) => parseInt(n.trim(), 10));
+				for (let i = start; i <= end; i++) {
+					if (i >= 1 && i <= totalPages) indices.push(i - 1);
+				}
+			} else {
+				const num = parseInt(part.trim(), 10);
+				if (num >= 1 && num <= totalPages) indices.push(num - 1);
+			}
+		}
+		return indices;
+	}
+}
+
+// PdfTools.node.ts
 import { IExecuteFunctions } from 'n8n-core';
-import { INodeExecutionData, INodeType, INodeTypeDescription } from 'n8n-workflow';
-import { degrees, PDFDocument } from 'pdf-lib';
+import { INodeExecutionData, INodeType, INodeTypeDescription, NodeOperationError } from 'n8n-workflow';
+import { Operation, PdfOperations } from './PdfOperations';
 
 export class PdfTools implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'PDF Tools',
 		name: 'pdfTools',
+		icon: 'file:pdfTools.svg',
 		group: ['transform'],
 		version: 1,
-		description:
-			'Perform various operations on PDF files such as merging, splitting, watermarking, and more.',
+		subtitle: '={{$parameter["operation"]}}',
+		description: 'Perform operations on PDF files',
 		defaults: {
 			name: 'PDF Tools',
 		},
 		inputs: ['main'],
 		outputs: ['main'],
+		credentials: [],
 		properties: [
 			{
 				displayName: 'Operation',
 				name: 'operation',
 				type: 'options',
-				noDataExpression: true,
+				default: Operation.AddImage,
 				options: [
-					{
-						name: 'Add Image',
-						value: 'addImage',
-						action: 'Insert an image into a PDF file at a specific position',
-					},
-					{
-						name: 'Add Watermark',
-						value: 'watermark',
-						action: 'Overlay watermark text on one or more pages of the PDF',
-					},
-					{
-						name: 'Delete Pages',
-						value: 'delete',
-						action: 'Remove specific pages from the PDF document',
-					},
-					{
-						name: 'Extract Text',
-						value: 'extractText',
-						action: 'Extract and return the text content from the PDF',
-					},
-					{
-						name: 'Merge PDFs',
-						value: 'merge',
-						action: 'Combine multiple PDF files into one single document',
-					},
-					{
-						name: 'Read Metadata',
-						value: 'metadata',
-						action: 'Retrieve metadata such as title author and creation date',
-					},
-					{
-						name: 'Reorder Pages',
-						value: 'reorder',
-						action: 'Rearrange the pages of a PDF file in a custom order',
-					},
-					{
-						name: 'Rotate Pages',
-						value: 'rotate',
-						action: 'Rotate specific pages to a given angle (90°, 180°, 270°)',
-					},
-					{
-						name: 'Split PDF',
-						value: 'split',
-						action: 'Extract selected pages and save them as a new PDF document',
-					},
+					{ name: 'Add Image', value: Operation.AddImage },
+					{ name: 'Merge PDFs', value: Operation.Merge },
+					{ name: 'Extract Text', value: Operation.ExtractText },
+					{ name: 'Split PDF', value: Operation.Split },
 				],
-				default: 'split',
 			},
 			{
-				displayName: 'PDF File',
-				name: 'pdfFile',
+				displayName: 'PDF Binary Field',
+				name: 'pdfBinaryName',
 				type: 'string',
-				required: true,
-				description: 'Binary data of the PDF file to process',
-				default: '',
-			},
-			{
-				displayName: 'Watermark Text',
-				name: 'watermarkText',
-				type: 'string',
-				description: 'Text to overlay as a watermark on one or more pages',
-				default: '',
+				default: 'pdf',
+				description: 'Name of the binary field containing the PDF',
 				displayOptions: {
 					show: {
-						operation: ['watermark'],
+						operation: [Operation.AddImage, Operation.ExtractText, Operation.Split],
 					},
 				},
 			},
 			{
-				displayName: 'Image File',
-				name: 'imageFile',
+				displayName: 'Image Binary Field',
+				name: 'imageBinaryName',
 				type: 'string',
-				description: 'Binary data of the image to insert into the PDF',
-				default: '',
+				default: 'image',
+				description: 'Name of the binary field containing the image (PNG or JPEG)',
 				displayOptions: {
 					show: {
-						operation: ['addImage'],
+						operation: [Operation.AddImage],
 					},
 				},
 			},
 			{
-				displayName: 'Pages to Delete',
-				name: 'pagesToDelete',
+				displayName: 'PDF Binary Field Names',
+				name: 'pdfBinaryNames',
 				type: 'string',
-				description:
-					'List of pages to remove, separated by commas, You can specify individual pages or ranges (e.g., "1,3,5-7")',
 				default: '',
+				description: 'Comma-separated list of binary field names to merge',
 				displayOptions: {
 					show: {
-						operation: ['delete'],
+						operation: [Operation.Merge],
 					},
 				},
 			},
 			{
-				displayName: 'PDF Files to Merge',
-				name: 'pdfFilesToMerge',
+				displayName: 'Pages',
+				name: 'pages',
 				type: 'string',
-				description: 'List of PDF files to combine, provided as binary data, separated by commas',
-				default: '',
+				default: 'all',
+				description: 'Pages to include (e.g., "1", "1,3-5", "all")',
 				displayOptions: {
 					show: {
-						operation: ['merge'],
+						operation: [Operation.AddImage, Operation.Split],
 					},
 				},
 			},
 			{
-				displayName: 'New Page Order',
-				name: 'newPageOrder',
-				type: 'string',
-				description: 'Reorder pages using a comma-separated list (e.g., "1,5,3,2,4")',
-				default: '',
+				displayName: 'Image Options',
+				name: 'imageOptions',
+				type: 'collection',
+				default: {},
 				displayOptions: {
 					show: {
-						operation: ['reorder'],
+						operation: [Operation.AddImage],
 					},
 				},
-			},
-			{
-				displayName: 'Rotation Angle',
-				name: 'rotationAngle',
-				type: 'options',
 				options: [
-					{ name: '90°', value: 90 },
-					{ name: '180°', value: 180 },
-					{ name: '270°', value: 270 },
+					{ displayName: 'X Position', name: 'x', type: 'number', default: 50 },
+					{ displayName: 'Y Position', name: 'y', type: 'number', default: 400 },
+					{ displayName: 'Scale', name: 'scale', type: 'number', default: 0.5 },
 				],
-				default: 90,
-				description: 'Select the angle to rotate the specified pages',
-				displayOptions: {
-					show: {
-						operation: ['rotate'],
-					},
-				},
 			},
 			{
-				displayName: 'Pages to Extract',
-				name: 'pagesToExtract',
+				displayName: 'Output File Name',
+				name: 'outputFilename',
 				type: 'string',
-				description:
-					'Specify pages to extract as a new PDF. Use commas for individual pages and dashes for ranges (e.g., "4,5,6-8").',
-				default: '',
+				default: 'output',
+				description: 'Name of the output PDF file (without extension)',
 				displayOptions: {
 					show: {
-						operation: ['split'],
+						operation: [Operation.AddImage, Operation.Merge, Operation.Split],
 					},
 				},
 			},
 		],
 	};
-	async execute(this: PdfTools & IExecuteFunctions): Promise<INodeExecutionData[][]> {
+
+	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
 		const items = this.getInputData();
 		const returnData: INodeExecutionData[] = [];
-
 		for (let i = 0; i < items.length; i++) {
-			const operation = this.getNodeParameter('operation', i) as string;
-			const binaryData = this.helpers.assertBinaryData(i, 'pdfFile');
-			const pdfBuffer = Buffer.from(binaryData.data, 'base64');
-			let pdfDoc = await PDFDocument.load(pdfBuffer);
-			let resultBuffer;
+			try {
+				const operation = this.getNodeParameter('operation', i) as Operation;
+				let result: Buffer | undefined;
+				const outputFilename = this.getNodeParameter('outputFilename', i, 'output') as string;
 
-			switch (operation) {
-				case 'delete':
-					const pagesToDelete = this.getNodeParameter('pagesToDelete', i) as string;
-					resultBuffer = await this.deletePages(pdfDoc, pagesToDelete);
-					break;
-				case 'merge':
-					const pdfFilesToMerge = this.getNodeParameter('pdfFilesToMerge', i) as string;
-					resultBuffer = await this.mergePDFs(pdfFilesToMerge);
-					break;
-				case 'reorder':
-					const newPageOrder = this.getNodeParameter('newPageOrder', i) as string;
-					resultBuffer = await this.reorderPages(pdfDoc, newPageOrder);
-					break;
-				case 'rotate':
-					const pagesToRotate = this.getNodeParameter('pagesToRotate', i) as string;
-					const rotationAngle = this.getNodeParameter('rotationAngle', i) as number; // Ajout du troisième argument !
-					resultBuffer = await this.rotatePages(pdfDoc, pagesToRotate, rotationAngle);
-					break;
-				case 'split':
-					const pagesToExtract = this.getNodeParameter('pagesToExtract', i) as string;
-					resultBuffer = await this.splitPDF(pdfDoc, pagesToExtract);
-					break;
-				default:
-					// eslint-disable-next-line n8n-nodes-base/node-execute-block-wrong-error-thrown
-					throw new Error(`Operation ${operation} not supported.`);
-			}
+				switch (operation) {
+					case Operation.AddImage: {
+						const pdfField = this.getNodeParameter('pdfBinaryName', i) as string;
+						const imageField = this.getNodeParameter('imageBinaryName', i) as string;
+						const pages = this.getNodeParameter('pages', i, 'all') as string;
+						const imageOptions = this.getNodeParameter('imageOptions', i) as { x: number; y: number; scale: number };
 
-			returnData.push({
-				json: {},
-				binary: {
-					pdfFile: {
-						mimeType: 'application/pdf',
-						data: resultBuffer.toString('base64'),
-					},
-				},
-			});
-		}
-
-		return [returnData];
-	}
-
-	async deletePages(pdfDoc: PDFDocument, pages: string): Promise<Buffer> {
-		const pagesToDelete = pages.split(',').map((p) => parseInt(p.trim()) - 1);
-		pagesToDelete.sort((a, b) => b - a);
-		pagesToDelete.forEach((page) => pdfDoc.removePage(page));
-		return Buffer.from(await pdfDoc.save());
-	}
-
-	async mergePDFs(files: string): Promise<Buffer> {
-		const mergedPdf = await PDFDocument.create();
-		for (const file of files.split(',')) {
-			const pdf = await PDFDocument.load(Buffer.from(file, 'base64'));
-			const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
-			copiedPages.forEach((page) => mergedPdf.addPage(page));
-		}
-		return Buffer.from(await mergedPdf.save());
-	}
-
-	async reorderPages(pdfDoc: PDFDocument, order: string): Promise<Buffer> {
-		const newOrder = order.split(',').map((p) => parseInt(p.trim()) - 1);
-		const newDoc = await PDFDocument.create();
-		for (const index of newOrder) {
-			const [copiedPage] = await newDoc.copyPages(pdfDoc, [index]);
-			newDoc.addPage(copiedPage);
-		}
-		return Buffer.from(await newDoc.save());
-	}
-
-	async rotatePages(pdfDoc: PDFDocument, pages: string, angle: number): Promise<Buffer> {
-		const pagesToRotate = this.parsePageSelection(pages, pdfDoc.getPageCount());
-
-		pagesToRotate.forEach((pageIndex) => {
-			const page = pdfDoc.getPages()[pageIndex];
-			const currentRotation = page.getRotation().angle; // Obtenir l'angle actuel
-			const newRotation = (currentRotation + angle) % 360; // Assurer une rotation dans [0, 360]
-			page.setRotation(degrees(newRotation)); // Appliquer la rotation
-		});
-
-		return Buffer.from(await pdfDoc.save());
-	}
-
-	async splitPDF(pdfDoc: PDFDocument, pages: string): Promise<Buffer> {
-		const selectedPages = this.parsePageSelection(pages, pdfDoc.getPageCount());
-		const newPdf = await PDFDocument.create();
-
-		for (const pageIndex of selectedPages) {
-			const [copiedPage] = await newPdf.copyPages(pdfDoc, [pageIndex]);
-			newPdf.addPage(copiedPage);
-		}
-
-		return Buffer.from(await newPdf.save());
-	}
-
-	private parsePageSelection(selection: string, pageCount: number): number[] {
-		const pages: number[] = [];
-
-		selection.split(',').forEach((part) => {
-			if (part.includes('-')) {
-				const [start, end] = part.split('-').map((p) => parseInt(p.trim(), 10) - 1);
-				for (let i = start; i <= end; i++) {
-					if (i >= 0 && i < pageCount) {
-						pages.push(i);
+						const pdfBinary = this.helpers.assertBinaryData(i, pdfField);
+						const imageBinary = this.helpers.assertBinaryData(i, imageField);
+						PdfOperations.ensureMimeType(pdfBinary, ['application/pdf'], this.getNode(), i);
+						PdfOperations.ensureMimeType(imageBinary, ['image/png', 'image/jpeg'], this.getNode(), i);
+						const totalPages = await PdfOperations.countPages(Buffer.from(pdfBinary.data, 'base64'));
+						const pageIndexes = PdfOperations.parsePageRange(pages, totalPages);
+						result = await PdfOperations.addImage(
+							Buffer.from(pdfBinary.data, 'base64'),
+							Buffer.from(imageBinary.data, 'base64'),
+							imageBinary.mimeType,
+							pageIndexes,
+							imageOptions,
+						);
+						break;
 					}
+					case Operation.Merge: {
+						const fieldList = this.getNodeParameter('pdfBinaryNames', i) as string;
+						const pdfNames = fieldList.split(',').map(name => name.trim()).filter(Boolean);
+						if (pdfNames.length < 2) throw new NodeOperationError(this.getNode(), 'At least two PDF fields are required for merging.', { itemIndex: i });
+						const pdfBuffers: Buffer[] = pdfNames.map(name => {
+							const binary = this.helpers.assertBinaryData(i, name);
+							PdfOperations.ensureMimeType(binary, ['application/pdf'], this.getNode(), i);
+							return Buffer.from(binary.data, 'base64');
+						});
+						result = await PdfOperations.mergePDFs(pdfBuffers);
+						break;
+					}
+					case Operation.ExtractText: {
+						const pdfField = this.getNodeParameter('pdfBinaryName', i) as string;
+						const pdfBinary = this.helpers.assertBinaryData(i, pdfField);
+						PdfOperations.ensureMimeType(pdfBinary, ['application/pdf'], this.getNode(), i);
+						const text = await PdfOperations.extractText(Buffer.from(pdfBinary.data, 'base64'));
+						returnData.push({ json: { text } });
+						continue;
+					}
+					case Operation.Split: {
+						const pdfField = this.getNodeParameter('pdfBinaryName', i) as string;
+						const pages = this.getNodeParameter('pages', i, '1') as string;
+						const pdfBinary = this.helpers.assertBinaryData(i, pdfField);
+						PdfOperations.ensureMimeType(pdfBinary, ['application/pdf'], this.getNode(), i);
+						const totalPages = await PdfOperations.countPages(Buffer.from(pdfBinary.data, 'base64'));
+						const pageIndexes = PdfOperations.parsePageRange(pages, totalPages);
+						result = await PdfOperations.splitPDF(Buffer.from(pdfBinary.data, 'base64'), pageIndexes);
+						break;
+					}
+					default:
+						throw new NodeOperationError(this.getNode(), `Unsupported operation: ${operation}`, { itemIndex: i });
 				}
-			} else {
-				const index = parseInt(part.trim(), 10) - 1;
-				if (index >= 0 && index < pageCount) {
-					pages.push(index);
+				if (result) {
+					returnData.push({
+						json: {},
+						binary: {
+							[outputFilename]: {
+								data: result.toString('base64'),
+								fileName: `${outputFilename}.pdf`,
+								mimeType: 'application/pdf',
+							},
+						},
+					});
 				}
+			} catch (error) {
+				if (this.continueOnFail()) {
+					returnData.push({ json: { error: (error as Error).message } });
+					continue;
+				}
+				throw error;
 			}
-		});
-
-		return [...new Set(pages)].sort((a, b) => a - b);
+		}
+		return [returnData];
 	}
 }
