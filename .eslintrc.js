@@ -13,12 +13,23 @@ module.exports = {
 	parser: '@typescript-eslint/parser',
 
 	parserOptions: {
-		project: ['./tsconfig.json'],
-		sourceType: 'module',
-		extraFileExtensions: ['.json'],
+		project: './tsconfig.json',
+		tsconfigRootDir: __dirname,
 	},
 
-	ignorePatterns: ['.eslintrc.js', '**/*.js', '**/node_modules/**', '**/dist/**'],
+	plugins: ['@typescript-eslint'],
+
+	extends: [
+		'plugin:@typescript-eslint/recommended',
+		'plugin:n8n-nodes-base/recommended',
+	],
+
+	rules: {
+		'@typescript-eslint/no-explicit-any': 'off',
+		'@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+	},
+
+	ignorePatterns: ['dist/**/*', 'node_modules/**/*'],
 
 	overrides: [
 		{
@@ -27,7 +38,7 @@ module.exports = {
 			extends: ['plugin:n8n-nodes-base/community'],
 			rules: {
 				'n8n-nodes-base/community-package-json-name-still-default': 'off',
-				'n8n-nodes-base/community-package-json-license-not-default': 'off' // We can't use straight MIT, since Carbone is licensed under something weird
+				'n8n-nodes-base/community-package-json-license-not-default': 'off', // We can't use straight MIT, since Carbone is licensed under something weird
 			},
 		},
 		{

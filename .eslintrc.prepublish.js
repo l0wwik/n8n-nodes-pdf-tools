@@ -2,15 +2,25 @@
  * @type {import('@types/eslint').ESLint.ConfigData}
  */
 module.exports = {
-	extends: "./.eslintrc.js",
-
-	overrides: [
-		{
-			files: ['package.json'],
-			plugins: ['eslint-plugin-n8n-nodes-base'],
-			rules: {
-				'n8n-nodes-base/community-package-json-name-still-default': 'error',
-			},
-		},
+	root: true,
+	env: {
+		browser: true,
+		es6: true,
+		node: true,
+	},
+	parser: '@typescript-eslint/parser',
+	parserOptions: {
+		project: './tsconfig.json',
+		tsconfigRootDir: __dirname,
+	},
+	plugins: ['@typescript-eslint'],
+	extends: [
+		'plugin:@typescript-eslint/recommended',
 	],
+	rules: {
+		'@typescript-eslint/no-explicit-any': 'off',
+		'@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+		'@typescript-eslint/no-non-null-assertion': 'off',
+	},
+	ignorePatterns: ['dist/**/*', 'node_modules/**/*', 'test/**/*'],
 };

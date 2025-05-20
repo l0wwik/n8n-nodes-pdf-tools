@@ -1,150 +1,158 @@
-# n8n-nodes-pdf-tools
+# PDF Tools Node for n8n
 
-Ce nœud permet d'effectuer diverses opérations sur les fichiers PDF.
+A powerful n8n node for PDF manipulation that provides a comprehensive set of tools for working with PDF files.
+
+## Features
+
+### PDF Operations
+
+- **Add Image**: Add images to PDF pages with customizable positioning and scaling
+- **Add Watermark**: Add text watermarks with customizable font size, color, and opacity
+- **Delete Pages**: Remove specific pages from a PDF
+- **Extract Pages**: Extract specific pages into a new PDF
+- **Extract Text**: Extract text content from PDF files
+- **Merge PDFs**: Combine multiple PDFs into a single document
+- **Read Metadata**: Extract PDF metadata (title, author, subject, etc.)
+- **Reorder Pages**: Change the order of pages in a PDF
+- **Rotate Pages**: Rotate specific pages by 90, 180, or 270 degrees
+- **Split PDF**: Split a PDF into multiple files
 
 ## Installation
 
+1. Install the node in your n8n instance:
 ```bash
 npm install n8n-nodes-pdf-tools
 ```
 
-## Fonctionnalités
+2. Restart your n8n server
 
-- Ajout d'images à un PDF
-- Ajout de filigranes textuels
-- Suppression de pages
-- Extraction de pages
-- Fusion de PDFs
-- Lecture de métadonnées
-- Réorganisation de pages
-- Rotation de pages
-- Division de PDFs
-- Extraction de texte
+## Usage
 
-## Configuration
+### Add Image to PDF
 
-### Ajout d'image
-- **PDF Binary Field**: Nom du champ binaire contenant le PDF
-- **Image Binary Field**: Nom du champ binaire contenant l'image (PNG ou JPEG)
-- **Page Target**: Pages cibles (ex: "1", "1,3-5", "all")
-- **Position**: 
-  - X: Position horizontale (points)
-  - Y: Position verticale (points)
-  - Scale: Échelle de l'image (0.1 à 1.0)
+Add an image to specific pages of a PDF with customizable positioning:
 
-### Ajout de filigrane
-- **PDF Binary Field**: Nom du champ binaire contenant le PDF
-- **Texte**: Texte du filigrane
-- **Page Target**: Pages cibles (ex: "1", "1,3-5", "all")
-- **Style**:
-  - Taille de police (points)
-  - Couleur (format hexadécimal)
-  - Opacité (0.0 à 1.0)
-  - Position X et Y
-
-### Suppression de pages
-- **PDF Binary Field**: Nom du champ binaire contenant le PDF
-- **Pages**: Pages à supprimer (ex: "1", "1,3-5")
-
-### Extraction de pages
-- **PDF Binary Field**: Nom du champ binaire contenant le PDF
-- **Pages**: Pages à extraire (ex: "1", "1,3-5")
-
-### Fusion de PDFs
-- **PDF Binary Field Names**: Liste des noms de champs binaires contenant les PDFs à fusionner (séparés par des virgules)
-
-### Lecture de métadonnées
-- **PDF Binary Field**: Nom du champ binaire contenant le PDF
-
-### Réorganisation de pages
-- **PDF Binary Field**: Nom du champ binaire contenant le PDF
-- **Pages**: Nouvel ordre des pages (ex: "3,1,2")
-
-### Rotation de pages
-- **PDF Binary Field**: Nom du champ binaire contenant le PDF
-- **Pages**: Pages à faire pivoter (ex: "1", "1,3-5")
-- **Angle**: Angle de rotation (90, 180, 270)
-
-### Division de PDF
-- **PDF Binary Field**: Nom du champ binaire contenant le PDF
-- **Pages**: Pages à extraire (ex: "1", "1,3-5")
-
-### Extraction de texte
-- **PDF Binary Field**: Nom du champ binaire contenant le PDF
-
-## Formats supportés
-
-- PDF: application/pdf
-- Images: image/png, image/jpeg
-
-## Exemples d'utilisation
-
-### Ajout d'une image à un PDF
 ```javascript
+// Example workflow
 {
   "operation": "addImage",
-  "binaryFields": {
-    "pdfBinaryName": "document.pdf",
-    "imageBinaryName": "logo.png"
-  },
-  "options": {
-    "watermarkOptions": {
-      "pageTarget": "all"
-    }
-  },
+  "pdfBinaryName": "input.pdf",
+  "imageBinaryName": "logo.png",
+  "pageTarget": "1,3-5",
   "imageOptions": {
-    "position": {
-      "x": 50,
-      "y": 400,
-      "scale": 0.5
-    }
+    "x": 50,
+    "y": 400,
+    "scale": 0.5
   }
 }
 ```
 
-### Fusion de plusieurs PDFs
+### Add Watermark
+
+Add a text watermark to PDF pages:
+
 ```javascript
+// Example workflow
+{
+  "operation": "watermark",
+  "pdfBinaryName": "input.pdf",
+  "watermarkText": "CONFIDENTIAL",
+  "pageTarget": "all",
+  "watermarkOptions": {
+    "fontSize": 72,
+    "color": "#FF0000",
+    "opacity": 0.5
+  }
+}
+```
+
+### Merge PDFs
+
+Combine multiple PDFs into a single document:
+
+```javascript
+// Example workflow
 {
   "operation": "merge",
-  "binaryFields": {
-    "pdfBinaryNames": "doc1.pdf,doc2.pdf,doc3.pdf"
-  }
+  "pdfBinaryNames": "pdf1.pdf,pdf2.pdf,pdf3.pdf"
 }
 ```
 
-### Extraction de pages spécifiques
+### Page Management
+
+Various operations for managing PDF pages:
+
 ```javascript
+// Delete pages
+{
+  "operation": "delete",
+  "pdfBinaryName": "input.pdf",
+  "pages": "1,3-5"
+}
+
+// Extract pages
 {
   "operation": "extractPages",
-  "binaryFields": {
-    "pdfBinaryName": "document.pdf"
-  },
-  "options": {
-    "pageOptions": {
-      "pages": "1,3-5"
-    }
-  }
+  "pdfBinaryName": "input.pdf",
+  "pages": "1-3"
+}
+
+// Reorder pages
+{
+  "operation": "reorder",
+  "pdfBinaryName": "input.pdf",
+  "newPageOrder": "3,1,2"
+}
+
+// Rotate pages
+{
+  "operation": "rotate",
+  "pdfBinaryName": "input.pdf",
+  "pages": "1-3",
+  "rotationAngle": 90
 }
 ```
 
-## Développement
+## Supported Formats
 
-### Installation des dépendances
-```bash
-npm install
-```
+- **PDF**: application/pdf
+- **Images**: 
+  - PNG (image/png)
+  - JPEG (image/jpeg)
 
-### Build
-```bash
-npm run build
-```
+## Page Selection Format
 
-### Tests
-```bash
-npm test
-```
+The node supports various page selection formats:
+- Single page: "1"
+- Multiple pages: "1,3,5"
+- Page ranges: "1-5"
+- All pages: "all"
 
-## Contribution
+## Error Handling
 
-Les contributions sont les bienvenues ! N'hésitez pas à ouvrir une issue ou une pull request.
+The node includes comprehensive error handling for:
+- Invalid file formats
+- Invalid page numbers
+- Missing required parameters
+- File processing errors
+
+## Dependencies
+
+- pdf-lib: For PDF manipulation
+- pdf-parse: For text extraction
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Support
+
+For support, please:
+1. Check the [documentation](https://docs.n8n.io)
+2. Open an issue on GitHub
+3. Join the [n8n community](https://community.n8n.io)
 

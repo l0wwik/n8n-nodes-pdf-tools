@@ -19,15 +19,19 @@
     "declaration": true,
     "sourceMap": true,
     "skipLibCheck": true,
-    "outDir": "./dist/"
+    "outDir": "./dist/",
+    "rootDir": "."
   },
   "include": [
 		"nodes/**/*",
 		"nodes/**/*.json",
 		"package.json",
-    "nodes/**/*.ts"
+    "nodes/**/*.ts",
+    "nodes/**/*.test.ts"
   ],
 	"exclude": [
-		"nodes/**/test/**/*"
+		"nodes/**/test/**/*",
+    "node_modules",
+    "dist"
 	]
 }
